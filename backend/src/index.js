@@ -13,7 +13,7 @@ module.exports = {
     // Store connected users and sessions
     const connectedUsers = new Map();
     const chatSessions = new Map();
-
+    const jwtSecret = process.env.JWT_SECRET || 'your-random-jwt-secret';
     // Middleware to verify JWT token
     io.use(async (socket, next) => {
       try {
@@ -23,7 +23,7 @@ module.exports = {
         }
 
         // Verify JWT token using Strapi's service
-        const { id } = await strapi.plugins['users-permissions'].services.jwt.verify(token);
+        const { id } = await strapi.plugins['users-permissions'].services.jwt.verify(token,jwtSecret);
         const user = await strapi.query('plugin::users-permissions.user').findOne({ where: { id } });
         
         if (!user) {
