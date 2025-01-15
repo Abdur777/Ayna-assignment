@@ -3,7 +3,7 @@ module.exports = {
     const { Server } = require('socket.io');
     const io = new Server(strapi.server.httpServer, {
       cors: {
-        origin: "http://localhost:3000",
+        origin: "https://ayna-assignment-rho.vercel.app/",
         methods: ["GET", "POST"],
         allowedHeaders: ["Authorization"],
         credentials: true
