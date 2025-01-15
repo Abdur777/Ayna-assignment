@@ -15,6 +15,9 @@ const Chat = () => {
     !!localStorage.getItem('jwt')
   );
   const [currUser, setCurrUser] = useState('')
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [sessionName, setSessionName] = useState('');
 
   // Load chat history from localStorage on component mount
   useEffect(() => {
@@ -82,6 +85,23 @@ const Chat = () => {
     }
   }, [isAuthenticated]);
 
+  // Modified chat history effect
+  useEffect(() => {
+    if (isAuthenticated) {
+      const savedSessions = localStorage.getItem('chatSessions');
+      if (savedSessions) {
+        setSessions(JSON.parse(savedSessions));
+      }
+    }
+  }, [isAuthenticated]);
+
+  // Save sessions to localStorage
+  useEffect(() => {
+    if (sessions.length > 0) {
+      localStorage.setItem('chatSessions', JSON.stringify(sessions));
+    }
+  }, [sessions]);
+
   const handleSignup = async () => {
     try {
       const data = await signup(username, email, password);
@@ -126,12 +146,43 @@ const Chat = () => {
     setCurrUser('')
   };
 
+  const createNewSession = () => {
+    const newSession = {
+      id: Date.now(),
+      name: sessionName || `Session ${sessions.length + 1}`,
+      messages: [],
+      userId: currUser // Add user identification
+    };
+    setSessions([...sessions, newSession]);
+    setActiveSessionId(newSession.id);
+    setSessionName('');
+  };
+
+  // Filter sessions for current user
+  const userSessions = sessions.filter(session => session.userId === currUser);
+
   const sendMessage = () => {
-    if (socket && message.trim() && selectedUserId) {
-      socket.emit('sendMessage', {
-        recipientId: selectedUserId,
-        text: message
-      });
+    if (socket && message.trim() && activeSessionId) {
+      const newMessage = {
+        text: message,
+        user: currUser,
+        sessionId: activeSessionId,
+        timestamp: Date.now()
+      };
+      
+      socket.emit('sendMessage', newMessage);
+      
+      // Update session messages
+      setSessions(sessions.map(session => {
+        if (session.id === activeSessionId) {
+          return {
+            ...session,
+            messages: [...session.messages, newMessage]
+          };
+        }
+        return session;
+      }));
+      
       setMessage('');
     }
   };
@@ -177,31 +228,72 @@ const Chat = () => {
           </button>
         </div>
       ) : (
-        <div className="bg-white p-6 rounded-lg shadow-lg w-96">
-          <h2 className="text-3xl font-semibold text-center text-gray-700 mb-4">Chat App</h2>
-          <div className="h-64 overflow-y-auto mb-4 p-4 bg-gray-50 rounded-lg shadow-inner">
-            {chatHistory.map((chat, index) => (
-              currUser === chat.user ? (
-                <p key={index} className="mb-2">
-                  <strong className={chat.user === 'Me' ? 'text-blue-500' : 'text-green-500'}>
-                    {chat.user}:
-                  </strong> {chat.text}
-                </p>
-              ) : null
-            ))}
+        <div className="bg-white p-6 rounded-lg shadow-lg w-[800px]">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-3xl font-semibold text-gray-700">My Chat Sessions</h2>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="New Session Name"
+                value={sessionName}
+                onChange={(e) => setSessionName(e.target.value)}
+                className="px-2 py-1 border rounded"
+              />
+              <button
+                onClick={createNewSession}
+                className="bg-green-500 text-white px-4 py-1 rounded hover:bg-green-600"
+              >
+                New Session
+              </button>
+            </div>
           </div>
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-          />
-          <button
-            onClick={sendMessage}
-            className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 mb-2"
-          >
-            Send Message
-          </button>
+
+          <div className="flex gap-4">
+            <div className="w-1/3 border-r pr-4">
+              {/* Session list */}
+              <div className="space-y-2">
+                {userSessions.map(session => (
+                  <div
+                    key={session.id}
+                    onClick={() => setActiveSessionId(session.id)}
+                    className={`p-2 rounded cursor-pointer ${
+                      activeSessionId === session.id ? 'bg-blue-100' : 'hover:bg-gray-100'
+                    }`}
+                  >
+                    {session.name}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Chat area */}
+            <div className="w-2/3">
+              <div className="h-64 overflow-y-auto mb-4 p-4 bg-gray-50 rounded-lg shadow-inner">
+                {activeSessionId && userSessions
+                  .find(s => s.id === activeSessionId)
+                  ?.messages.map((msg, index) => (
+                    <p key={index} className="mb-2">
+                      <strong className="text-blue-500">You:</strong> {msg.text}
+                    </p>
+                  ))}
+              </div>
+
+              <input
+                type="text"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                className="w-full px-4 py-2 border rounded-lg mb-4"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!activeSessionId}
+                className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 mb-2"
+              >
+                Send Message
+              </button>
+            </div>
+          </div>
+
           <button
             onClick={handleLogout}
             className="w-full bg-red-500 text-white py-2 px-4 rounded-lg hover:bg-red-600"

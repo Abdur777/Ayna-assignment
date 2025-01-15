@@ -10,8 +10,9 @@ module.exports = {
       }
     });
 
-    // Store connected users
+    // Store connected users and sessions
     const connectedUsers = new Map();
+    const chatSessions = new Map();
 
     // Middleware to verify JWT token
     io.use(async (socket, next) => {
@@ -38,79 +39,88 @@ module.exports = {
       }
     });
 
-    io.on('connection', (socket) => {
-      // @ts-ignore
-      const userId = socket.user.id;
-      connectedUsers.set(userId, {
-        socket: socket,
+    io.on('connection', async (socket) => {
+      try {
+        // Add user to connected users
         // @ts-ignore
-        user: socket.user
-      });
-
-      // Emit welcome message
-      socket.emit('welcome', {
-        // @ts-ignore
-        text: `Welcome ${socket.user.username}!`
-      });
-
-      // Emit updated user list to all clients
-      io.emit('userList', {
-        users: Array.from(connectedUsers.values()).map(u => ({
-          id: u.user.id,
-          username: u.user.username
-        }))
-      });
-
-      // Handle private messages
-      socket.on('sendMessage', (message) => {
-        // Check if recipient exists and is connected
-        const recipientConnection = connectedUsers.get(message.recipientId);
-        if (!recipientConnection) {
-          socket.emit('messageError', {
-            error: 'Recipient not found or offline'
-          });
-          return;
-        }
-
-        const enhancedMessage = {
+        connectedUsers.set(socket.user.id, {
           // @ts-ignore
-          senderId: socket.user.id,
+          id: socket.user.id,
           // @ts-ignore
-          senderUsername: socket.user.username,
-          recipientId: message.recipientId,
-          text: message.text,
-          timestamp: new Date()
-        };
-      // @ts-ignore
-        if (socket.user.id !== message.recipientId) {
-          recipientConnection.socket.emit('message', enhancedMessage);
-        }
-        socket.emit('message', enhancedMessage);
-      });
-
-      // Handle typing events
-      socket.on('typing', (recipientId) => {
-        const recipientConnection = connectedUsers.get(recipientId);
-        if (recipientConnection) {
-          recipientConnection.socket.emit('typing', {
-            // @ts-ignore
-            username: socket.user.username,
-            // @ts-ignore
-            userId: socket.user.id
-          });
-        }
-      });
-
-      // Handle disconnection
-      socket.on('disconnect', () => {
-        connectedUsers.delete(userId);
-        io.emit('userList', {
-          users: Array.from(connectedUsers.values()).map(u => ({
-            id: u.user.id,
-            username: u.user.username
-          }))
+          username: socket.user.username,
+          socketId: socket.id
         });
-      });
+
+        // Send welcome message
+        // @ts-ignore
+        socket.emit('welcome', { text: `Welcome ${socket.user.username}!` });
+
+        // Broadcast updated user list
+        io.emit('userList', {
+          users: Array.from(connectedUsers.values())
+        });
+
+        // Handle creating new chat session
+        socket.on('createSession', (sessionData) => {
+          const sessionId = Date.now().toString();
+          chatSessions.set(sessionId, {
+            id: sessionId,
+            name: sessionData.name,
+            // @ts-ignore
+            createdBy: socket.user.id,
+            messages: []
+          });
+          
+          socket.emit('sessionCreated', {
+            sessionId,
+            name: sessionData.name
+          });
+        });
+
+        // Handle session messages
+        socket.on('sendMessage', (data) => {
+          const session = chatSessions.get(data.sessionId);
+          if (session) {
+            const message = {
+              text: data.text,
+              sessionId: data.sessionId,
+              // @ts-ignore
+              senderId: socket.user.id,
+              // @ts-ignore
+              senderUsername: socket.user.username,
+              timestamp: Date.now()
+            };
+            
+            session.messages.push(message);
+            io.emit('message', message);
+          }
+        });
+
+        // Handle typing events
+        socket.on('typing', (recipientId) => {
+          const recipientConnection = connectedUsers.get(recipientId);
+          if (recipientConnection) {
+            recipientConnection.socket.emit('typing', {
+              // @ts-ignore
+              username: socket.user.username,
+              // @ts-ignore
+              userId: socket.user.id
+            });
+          }
+        });
+
+        // Handle disconnection
+        socket.on('disconnect', () => {
+          // @ts-ignore
+          connectedUsers.delete(socket.user.id);
+          io.emit('userList', {
+            users: Array.from(connectedUsers.values())
+          });
+        });
+
+      } catch (error) {
+        console.error('Socket connection error:', error);
+      }
     });
   },
 };
