@@ -41,7 +41,7 @@ const Chat = () => {
     if (isAuthenticated) {
       const jwt = localStorage.getItem('jwt');
 
-      const socketConnection = io('http://localhost:1337', {
+      const socketConnection = io('https://ayna-assignment-production.up.railway.app/', {
         query: { token: jwt },
         transports: ['websocket'],
       });
